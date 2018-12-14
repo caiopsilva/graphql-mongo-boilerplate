@@ -1,0 +1,50 @@
+import Koa from 'koa'
+import bodyParser from 'koa-bodyparser'
+import cors from 'kcors'
+import graphqlHttp from 'koa-graphql'
+import logger from 'koa-logger'
+import Router from 'koa-router'
+import convert from 'koa-convert'
+import graphqlBatchHttpWrapper from 'koa-graphql-batch'
+import { schema } from './schema'
+import { jwtSecret } from './config'
+import { getUser } from './auth'
+
+const app = new Koa()
+const router = new Router()
+
+app.keys = jwtSecret
+
+const graphqlSettingsPerReq = async (req) => {
+  const { user } = await getUser(req.header.authorization)
+
+  return {
+    graphiql: process.env.NODE_ENV !== 'production',
+    schema,
+    context: {
+      user,
+      req
+    },
+    formatError: (error) => {
+      console.log(error.message)
+      console.log(error.locations)
+      console.log(error.stack)
+
+      return {
+        message: error.message,
+        locations: error.locations,
+        stack: error.stack
+      }
+    }
+  }
+}
+
+const graphqlServer = convert(graphqlHttp(graphqlSettingsPerReq))
+router.all('/graphql/batch', bodyParser(), graphqlBatchHttpWrapper(graphqlServer))
+router.all('/graphql', graphqlServer)
+
+app.use(logger())
+app.use(cors())
+app.use(router.routes()).use(router.allowedMethods())
+
+export default app
